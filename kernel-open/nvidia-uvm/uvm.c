@@ -39,6 +39,7 @@
 #include "uvm_mem.h"
 #include "uvm_kvmalloc.h"
 #include "uvm_test_file.h"
+#include "uvm_gnio.h"
 
 #define NVIDIA_UVM_DEVICE_NAME          "nvidia-uvm"
 
@@ -258,6 +259,7 @@ static int uvm_release(struct inode *inode, struct file *filp)
             break;
 
         case UVM_FD_VA_SPACE:
+            uvm_gnio_mem_free_all((uvm_va_space_t *)ptr);
             uvm_release_va_space(filp, (uvm_va_space_t *)ptr);
             break;
 
@@ -1048,6 +1050,9 @@ static long uvm_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
         UVM_ROUTE_CMD_STACK_INIT_CHECK(UVM_CLEAR_ALL_ACCESS_COUNTERS,      uvm_api_clear_all_access_counters);
     }
 
+    if (uvm_gnio_is_gnio_cmd(cmd))
+        return uvm_gnio_ioctl(filp, cmd, arg);
+
     // Try the test ioctls if none of the above matched
     return uvm_test_ioctl(filp, cmd, arg);
 }
@@ -1230,6 +1235,7 @@ module_init(uvm_init_entry);
 module_exit(uvm_exit_entry);
 
 MODULE_LICENSE("Dual MIT/GPL");
+MODULE_IMPORT_NS("DMA_BUF");
 MODULE_INFO(supported, "external");
 MODULE_VERSION(NV_VERSION_STRING);
 MODULE_DESCRIPTION("NVIDIA Unified Virtual Memory kernel module");
