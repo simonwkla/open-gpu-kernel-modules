@@ -272,8 +272,9 @@ NV_STATUS uvm_gnio_mem_import_dmabuf(uvm_va_space_t *va_space, int dmabuf_fd, Nv
     buf->sgt = sgt;
     buf->dma_addr = sg_dma_address(sgt->sgl);
 
-    // Sealed HtoD stages ciphertext into this buffer via a kernel cpu_encrypt, so
-    // map a CPU view. Best-effort: DtoH/plain paths never read buf->kaddr.
+    // Both sealed directions touch this buffer from the CPU: HtoD reads its
+    // plaintext for cpu_encrypt staging, and DtoH logs the per-page IV into it.
+    // Map a CPU view (dma_heap_coh is coherent sysmem, so this always succeeds).
     iosys_map_clear(&buf->vmap);
     buf->kaddr = NULL;
     if (dma_buf_vmap_unlocked(dmabuf, &buf->vmap) == 0 && !buf->vmap.is_iomem)

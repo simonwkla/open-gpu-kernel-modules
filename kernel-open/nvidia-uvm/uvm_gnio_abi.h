@@ -72,11 +72,55 @@ typedef struct
     UVM_GNIO_U32 src_handle;
     UVM_GNIO_U64 size;
     UVM_GNIO_U32 kind;
-    UVM_GNIO_U64 iv_user;
-    UVM_GNIO_U64 auth_tag_user;
-    UVM_GNIO_U32 key_version_out;
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_COPY_PARAMS;
+
+// Sealed DtoH lays out the destination dmabuf as a self-describing blob:
+//   [ ciphertext (size) | pad | auth tag | pad | per-page IV log ]
+// The CE writes the ciphertext and tag (physical+SYS), the CPU logs the IVs into
+// the same buffer. Shared by the kernel (which writes at these offsets) and the
+// userspace allocator (which must size the dmabuf to match). The kernel asserts
+// these constants against the live UVM types (BUILD_BUG_ON).
+#define UVM_GNIO_PAGE_SIZE     4096u
+#define UVM_GNIO_AUTH_TAG_SIZE 16u   // == UVM_CONF_COMPUTING_AUTH_TAG_SIZE
+#define UVM_GNIO_IV_SIZE       13u   // == sizeof(UvmCslIv): u8 iv[12] + u8 fresh
+#define UVM_GNIO_SEAL_ALIGN    16u
+
+static inline UVM_GNIO_U64 uvm_gnio_align_up(UVM_GNIO_U64 v, UVM_GNIO_U64 a)
+{
+    return (v + (a - 1)) & ~(UVM_GNIO_U64)(a - 1);
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_iv_count(UVM_GNIO_U64 size)
+{
+    return (size + UVM_GNIO_PAGE_SIZE - 1) / UVM_GNIO_PAGE_SIZE;
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_seal_tag_bytes(UVM_GNIO_U64 size)
+{
+    return uvm_gnio_iv_count(size) * UVM_GNIO_AUTH_TAG_SIZE;
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_seal_iv_bytes(UVM_GNIO_U64 size)
+{
+    return uvm_gnio_iv_count(size) * UVM_GNIO_IV_SIZE;
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_seal_tag_off(UVM_GNIO_U64 size)
+{
+    return uvm_gnio_align_up(size, UVM_GNIO_SEAL_ALIGN);
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_seal_iv_off(UVM_GNIO_U64 size)
+{
+    return uvm_gnio_align_up(uvm_gnio_seal_tag_off(size) + uvm_gnio_seal_tag_bytes(size),
+                             UVM_GNIO_SEAL_ALIGN);
+}
+
+static inline UVM_GNIO_U64 uvm_gnio_sealed_dtoh_buf_bytes(UVM_GNIO_U64 size)
+{
+    return uvm_gnio_seal_iv_off(size) + uvm_gnio_seal_iv_bytes(size);
+}
 
 typedef struct
 {
