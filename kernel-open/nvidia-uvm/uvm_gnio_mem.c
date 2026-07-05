@@ -330,6 +330,50 @@ NV_STATUS uvm_gnio_mem_free(uvm_va_space_t *va_space, NvU32 handle)
     return NV_OK;
 }
 
+// Map a GNIO buffer into the caller's user (CUDA) GPU VA space at user_va, so a CUDA
+// kernel can write it. The buffer keeps its existing kernel-VA mapping for the CE, so the
+// same physical CPR pages are reachable by both the SM (user VA) and the engine (kernel VA).
+NV_STATUS uvm_gnio_mem_map_user(uvm_va_space_t *va_space, NvU32 handle, NvU64 user_va)
+{
+    uvm_gnio_buf_t *buf;
+    NV_STATUS status;
+    uvm_mem_gpu_mapping_attrs_t attrs = {
+        .protection = UVM_PROT_READ_WRITE_ATOMIC,
+        .is_cacheable = true,
+    };
+
+    uvm_va_space_down_write(va_space);
+
+    buf = uvm_gnio_buf_get(va_space, handle);
+    if (buf == NULL || buf->mem == NULL) {
+        uvm_va_space_up_write(va_space);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    status = uvm_mem_map_gpu_user(buf->mem, buf->gpu, va_space, (void *)user_va, &attrs);
+
+    uvm_va_space_up_write(va_space);
+    return status;
+}
+
+NV_STATUS uvm_gnio_mem_unmap_user(uvm_va_space_t *va_space, NvU32 handle)
+{
+    uvm_gnio_buf_t *buf;
+
+    uvm_va_space_down_write(va_space);
+
+    buf = uvm_gnio_buf_get(va_space, handle);
+    if (buf == NULL || buf->mem == NULL) {
+        uvm_va_space_up_write(va_space);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+
+    uvm_mem_unmap_gpu_user(buf->mem, buf->gpu);
+
+    uvm_va_space_up_write(va_space);
+    return NV_OK;
+}
+
 void uvm_gnio_mem_free_all(uvm_va_space_t *va_space)
 {
     NvU32 i;

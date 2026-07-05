@@ -46,6 +46,10 @@ NV_STATUS uvm_gnio_mem_import_dmabuf(uvm_va_space_t *va_space,
 
 NV_STATUS uvm_gnio_mem_free(uvm_va_space_t *va_space, NvU32 handle);
 
+NV_STATUS uvm_gnio_mem_map_user(uvm_va_space_t *va_space, NvU32 handle, NvU64 user_va);
+
+NV_STATUS uvm_gnio_mem_unmap_user(uvm_va_space_t *va_space, NvU32 handle);
+
 void uvm_gnio_mem_free_all(uvm_va_space_t *va_space);
 
 NV_STATUS uvm_gnio_alloc_vidmem(uvm_gpu_t *gpu, NvU64 size, uvm_mem_t **mem_out);

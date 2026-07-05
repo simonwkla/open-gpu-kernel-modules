@@ -141,6 +141,13 @@ NV_STATUS uvm_gnio_copy(uvm_va_space_t *va_space, UVM_GNIO_COPY_PARAMS *params)
             status = g_uvm_global.conf_computing_enabled ? NV_ERR_NOT_SUPPORTED
                    : gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_CPU_TO_GPU);
             break;
+        // force plain CE memcopy across boundary under CC -> should fault
+        case UVM_GNIO_COPY_DTOH_PLAIN:
+            status = gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_GPU_TO_CPU);
+            break;
+        case UVM_GNIO_COPY_HTOD_PLAIN:
+            status = gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_CPU_TO_GPU);
+            break;
         default:
             status = NV_ERR_INVALID_ARGUMENT;
             break;

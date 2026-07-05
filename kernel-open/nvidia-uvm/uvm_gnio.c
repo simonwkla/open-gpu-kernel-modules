@@ -51,6 +51,14 @@ long uvm_gnio_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
             UVM_GNIO_DISPATCH(UVM_GNIO_IMPORT_DMABUF_PARAMS,
                 uvm_gnio_mem_import_dmabuf(va_space, (int)params.dmabuf_fd, params.size, &params.handle_out));
 
+        case UVM_GNIO_MAP_USER:
+            UVM_GNIO_DISPATCH(UVM_GNIO_MAP_USER_PARAMS,
+                uvm_gnio_mem_map_user(va_space, params.handle, params.user_va));
+
+        case UVM_GNIO_UNMAP_USER:
+            UVM_GNIO_DISPATCH(UVM_GNIO_UNMAP_USER_PARAMS,
+                uvm_gnio_mem_unmap_user(va_space, params.handle));
+
         case UVM_GNIO_COPY: {
             UVM_GNIO_COPY_PARAMS params;
             if (copy_from_user(&params, (void __user *)arg, sizeof(params)))

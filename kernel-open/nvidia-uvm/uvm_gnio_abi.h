@@ -30,7 +30,9 @@
 #define UVM_GNIO_BENCH_LATENCY    (UVM_GNIO_BASE + 4)
 #define UVM_GNIO_BENCH_BANDWIDTH  (UVM_GNIO_BASE + 5)
 #define UVM_GNIO_CALIBRATE_PTIMER (UVM_GNIO_BASE + 6)
-#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 7)
+#define UVM_GNIO_MAP_USER         (UVM_GNIO_BASE + 7)
+#define UVM_GNIO_UNMAP_USER       (UVM_GNIO_BASE + 8)
+#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 9)
 
 #define UVM_GNIO_KIND_CPR_VIDMEM      0
 #define UVM_GNIO_KIND_UNPROT_SYSMEM   1
@@ -41,6 +43,9 @@
 #define UVM_GNIO_COPY_DTOD        2
 #define UVM_GNIO_COPY_DTOH_SEALED 3
 #define UVM_GNIO_COPY_HTOD_SEALED 4
+// probes that will fail / should produce a fault under CC
+#define UVM_GNIO_COPY_DTOH_PLAIN  5
+#define UVM_GNIO_COPY_HTOD_PLAIN  6
 
 #define UVM_GNIO_F_MEASURE_DISPATCH (1u << 0)
 
@@ -65,6 +70,19 @@ typedef struct
     UVM_GNIO_U32 handle_out;
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_IMPORT_DMABUF_PARAMS;
+
+typedef struct
+{
+    UVM_GNIO_U32 handle;
+    UVM_GNIO_U32 rmStatus;
+    UVM_GNIO_U64 user_va;
+} UVM_GNIO_MAP_USER_PARAMS;
+
+typedef struct
+{
+    UVM_GNIO_U32 handle;
+    UVM_GNIO_U32 rmStatus;
+} UVM_GNIO_UNMAP_USER_PARAMS;
 
 typedef struct
 {

@@ -60,11 +60,7 @@ static bool vidmem_can_be_mapped(uvm_mem_t *vidmem, bool is_user_space)
 {
     UVM_ASSERT(uvm_mem_is_vidmem(vidmem));
 
-    // Mapping a vidmem allocation on a user VA space is currently unsupported,
-    // because there is no use case.
-    if (is_user_space)
-        return false;
-
+    // always allow
     return true;
 }
 
