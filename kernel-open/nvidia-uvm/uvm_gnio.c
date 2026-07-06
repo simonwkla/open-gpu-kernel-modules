@@ -59,6 +59,22 @@ long uvm_gnio_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
             UVM_GNIO_DISPATCH(UVM_GNIO_UNMAP_USER_PARAMS,
                 uvm_gnio_mem_unmap_user(va_space, params.handle));
 
+        case UVM_GNIO_CHAN_CREATE:
+            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_CREATE_PARAMS,
+                uvm_gnio_chan_create(va_space, &params));
+
+        case UVM_GNIO_CHAN_DESTROY:
+            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_DESTROY_PARAMS,
+                uvm_gnio_chan_destroy(va_space, params.handle));
+
+        case UVM_GNIO_CHAN_PREP:
+            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_PREP_PARAMS,
+                uvm_gnio_chan_prep(va_space, &params));
+
+        case UVM_GNIO_CHAN_ARM:
+            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_ARM_PARAMS,
+                uvm_gnio_chan_arm(va_space, &params));
+
         case UVM_GNIO_COPY: {
             UVM_GNIO_COPY_PARAMS params;
             if (copy_from_user(&params, (void __user *)arg, sizeof(params)))

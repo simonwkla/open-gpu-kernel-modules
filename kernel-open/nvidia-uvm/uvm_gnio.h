@@ -50,6 +50,16 @@ NV_STATUS uvm_gnio_mem_map_user(uvm_va_space_t *va_space, NvU32 handle, NvU64 us
 
 NV_STATUS uvm_gnio_mem_unmap_user(uvm_va_space_t *va_space, NvU32 handle);
 
+NV_STATUS uvm_gnio_chan_create(uvm_va_space_t *va_space, UVM_GNIO_CHAN_CREATE_PARAMS *params);
+
+NV_STATUS uvm_gnio_chan_destroy(uvm_va_space_t *va_space, NvU32 handle);
+
+NV_STATUS uvm_gnio_chan_prep(uvm_va_space_t *va_space, UVM_GNIO_CHAN_PREP_PARAMS *params);
+
+NV_STATUS uvm_gnio_chan_arm(uvm_va_space_t *va_space, UVM_GNIO_CHAN_ARM_PARAMS *params);
+
+void uvm_gnio_chan_destroy_all(uvm_va_space_t *va_space);
+
 void uvm_gnio_mem_free_all(uvm_va_space_t *va_space);
 
 NV_STATUS uvm_gnio_alloc_vidmem(uvm_gpu_t *gpu, NvU64 size, uvm_mem_t **mem_out);

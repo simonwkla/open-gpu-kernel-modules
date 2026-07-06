@@ -259,6 +259,7 @@ static int uvm_release(struct inode *inode, struct file *filp)
             break;
 
         case UVM_FD_VA_SPACE:
+            uvm_gnio_chan_destroy_all((uvm_va_space_t *)ptr);
             uvm_gnio_mem_free_all((uvm_va_space_t *)ptr);
             uvm_release_va_space(filp, (uvm_va_space_t *)ptr);
             break;

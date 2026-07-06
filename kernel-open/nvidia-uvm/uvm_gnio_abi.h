@@ -32,7 +32,11 @@
 #define UVM_GNIO_CALIBRATE_PTIMER (UVM_GNIO_BASE + 6)
 #define UVM_GNIO_MAP_USER         (UVM_GNIO_BASE + 7)
 #define UVM_GNIO_UNMAP_USER       (UVM_GNIO_BASE + 8)
-#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 9)
+#define UVM_GNIO_CHAN_CREATE      (UVM_GNIO_BASE + 9)
+#define UVM_GNIO_CHAN_DESTROY     (UVM_GNIO_BASE + 10)
+#define UVM_GNIO_CHAN_PREP        (UVM_GNIO_BASE + 11)
+#define UVM_GNIO_CHAN_ARM         (UVM_GNIO_BASE + 12)
+#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 13)
 
 #define UVM_GNIO_KIND_CPR_VIDMEM      0
 #define UVM_GNIO_KIND_UNPROT_SYSMEM   1
@@ -83,6 +87,67 @@ typedef struct
     UVM_GNIO_U32 handle;
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_UNMAP_USER_PARAMS;
+
+// C0: allocate a dedicated CE GPFIFO channel (GPFIFO + GP_PUT in vidmem/CPR). Returns the
+// channel VAs of the GPFIFO ring and GP_PUT (which the SM will write) + whether the doorbell
+// (workSubmissionOffset MMIO) is present.
+typedef struct
+{
+    UVM_GNIO_U32 handle_out;
+    UVM_GNIO_U32 rmStatus;
+    UVM_GNIO_U32 num_gpfifo_entries;
+    UVM_GNIO_U32 hw_channel_id;
+    UVM_GNIO_U64 gpfifo_gpu_va;
+    UVM_GNIO_U64 gpput_gpu_va;
+    UVM_GNIO_U32 doorbell_present;
+    UVM_GNIO_U32 pad;
+} UVM_GNIO_CHAN_CREATE_PARAMS;
+
+typedef struct
+{
+    UVM_GNIO_U32 handle;
+    UVM_GNIO_U32 rmStatus;
+} UVM_GNIO_CHAN_DESTROY_PARAMS;
+
+// CHAN_PREP authors the self-sufficient hot-channel pushbuffer (the driver renders the method bytes;
+// the SM writes them into the CPR `pb` buffer). Per fire it is:
+//   [ acquire(go>=1), release(go<-0), reduction_inc(done), reduction_inc(own GP_PUT), ring own doorbell ]
+// It waits for the SM to fire (a store to `go`), re-arms `go` so the next ring slot waits again, ticks
+// `done` for the SM to track completions, then advances its own GP_PUT and rings its own doorbell -- so
+// the channel keeps itself running with zero CPU per fire. (A real CE copy method goes between the
+// acquire and the reset.) `go` and `done` are two slots in one CPR `sems` buffer at the returned offsets.
+typedef struct
+{
+    UVM_GNIO_U32  chan_handle;
+    UVM_GNIO_U32  pb_handle;
+    UVM_GNIO_U32  sems_handle;
+    UVM_GNIO_U32  rmStatus;
+    UVM_GNIO_U32  method_size;
+    UVM_GNIO_U32  go_off;
+    UVM_GNIO_U32  done_off;
+    UVM_GNIO_U32  pad;
+    UVM_GNIO_U64  pb_gpu_va;
+    UVM_GNIO_U64  sems_gpu_va;
+    unsigned char methods[128];
+} UVM_GNIO_CHAN_PREP_PARAMS;
+
+// CHAN_ARM fills the whole GPFIFO ring with [segment_base(pb), pb x(num_entries-1)], sets GP_PUT to
+// init_put, and rings the doorbell once (dry=1 returns the encoded entries without touching the GPU).
+// The channel then walks the ring, blocking at each slot's acquire; because the pushbuffer self-advances
+// GP_PUT and self-rings the doorbell, it keeps running past init_put. init_put is headroom over the
+// per-lap segment-base slot (which does not advance GP_PUT): larger init_put => more laps before drain.
+typedef struct
+{
+    UVM_GNIO_U32 chan_handle;
+    UVM_GNIO_U32 num_entries;
+    UVM_GNIO_U32 init_put;
+    UVM_GNIO_U32 dry;
+    UVM_GNIO_U32 rmStatus;
+    UVM_GNIO_U64 pb_gpu_va;
+    UVM_GNIO_U64 seg_entry;
+    UVM_GNIO_U64 pb_entry;
+    UVM_GNIO_U32 put;
+} UVM_GNIO_CHAN_ARM_PARAMS;
 
 typedef struct
 {

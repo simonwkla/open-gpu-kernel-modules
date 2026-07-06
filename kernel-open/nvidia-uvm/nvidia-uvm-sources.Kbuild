@@ -12,6 +12,7 @@ NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gnio.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gnio_mem.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gnio_copy.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gnio_bench.c
+NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gnio_chan.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_tools.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_global.c
 NVIDIA_UVM_SOURCES += nvidia-uvm/uvm_gpu.c
