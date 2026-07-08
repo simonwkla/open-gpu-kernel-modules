@@ -60,7 +60,14 @@ static bool vidmem_can_be_mapped(uvm_mem_t *vidmem, bool is_user_space)
 {
     UVM_ASSERT(uvm_mem_is_vidmem(vidmem));
 
-    // always allow
+    // Stock UVM forbids user-space vidmem mappings (no use case). GNIO needs exactly that for its
+    // hot-channel CPR buffers (the SM authors the pushbuffer via a user/CUDA VA over the same
+    // physical pages the CE reaches by kernel VA), so allow it only for gnio-tagged vidmem. This
+    // does not open a CPU-plaintext view of CPR: CPU vidmem mapping stays gated by numa.enabled in
+    // mem_can_be_mapped_on_cpu (false on a discrete CC GPU). Kernel-space mapping is unchanged.
+    if (is_user_space)
+        return vidmem->is_gnio;
+
     return true;
 }
 

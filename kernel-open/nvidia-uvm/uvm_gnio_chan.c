@@ -45,8 +45,6 @@ typedef struct
     uvmGpuTsgHandle tsg;
     uvmGpuChannelHandle handle;
     UvmGpuChannelInfo channel_info;
-    NvU32 pb_handle;
-    NvU32 pb_size;
 } uvm_gnio_chan_t;
 
 static uvm_gnio_chan_t g_gnio_chans[UVM_GNIO_MAX_CHANS];
@@ -130,10 +128,6 @@ NV_STATUS uvm_gnio_chan_create(uvm_va_space_t *va_space, UVM_GNIO_CHAN_CREATE_PA
     g_gnio_chans[slot].tsg = tsg;
 
     params->handle_out = (NvU32)slot;
-    params->num_gpfifo_entries = g_gnio_chans[slot].channel_info.numGpFifoEntries;
-    params->hw_channel_id = g_gnio_chans[slot].channel_info.hwChannelId;
-    params->gpfifo_gpu_va = g_gnio_chans[slot].channel_info.gpFifoGpuVa;
-    params->gpput_gpu_va = g_gnio_chans[slot].channel_info.gpPutGpuVa;
     params->doorbell_present = (g_gnio_chans[slot].channel_info.workSubmissionOffset != NULL) ? 1 : 0;
 
     uvm_va_space_up_read(va_space);
@@ -170,10 +164,15 @@ NV_STATUS uvm_gnio_chan_destroy(uvm_va_space_t *va_space, NvU32 handle)
     return NV_OK;
 }
 
-// Author the self-sufficient hot pushbuffer into `params->methods` (the SM copies it into the CPR `pb`
-// buffer). go/done live in one CPR `sems` buffer at go_off/done_off. See the pushbuffer layout comment
-// in uvm_gnio_abi.h. A membar precedes the GP_PUT advance and the doorbell so the Host front-end
-// observes them before the entry completes.
+// Author the self-sufficient hot pushbuffer into `params->methods`. The bytes are returned to
+// userspace and copied into the CPR `pb` buffer BY THE SM (a CUDA kernel writing the MAP_USER user
+// VA) rather than by an in-kernel author -- that is deliberate and load-bearing: it is the thesis'
+// direct demonstration that an SM authors executable methods in CPR with no host signing/encryption.
+// The driver could not do it in-kernel anyway: CPR vidmem has no plaintext CPU kernel mapping under
+// CC (BAR0 firewall), so the only in-kernel ingress is the authenticated SEC2 path (which CHAN_ARM
+// uses for the ring/GP_PUT). go/done live in one CPR `sems` buffer at go_off/done_off. See the
+// pushbuffer layout comment in uvm_gnio_abi.h. A membar precedes the GP_PUT advance and the doorbell
+// so the Host front-end observes them before the entry completes.
 NV_STATUS uvm_gnio_chan_prep(uvm_va_space_t *va_space, UVM_GNIO_CHAN_PREP_PARAMS *params)
 {
     uvm_gnio_chan_t *ch;
@@ -225,8 +224,6 @@ NV_STATUS uvm_gnio_chan_prep(uvm_va_space_t *va_space, UVM_GNIO_CHAN_PREP_PARAMS
     memcpy(params->methods, fake.begin, size);
     uvm_push_end_fake(&fake);
 
-    ch->pb_handle = params->pb_handle;
-    ch->pb_size = size;
     params->method_size = size;
     params->go_off = go_off;
     params->done_off = done_off;
@@ -259,10 +256,16 @@ NV_STATUS uvm_gnio_chan_arm(uvm_va_space_t *va_space, UVM_GNIO_CHAN_ARM_PARAMS *
 
     uvm_va_space_down_read(va_space);
 
-    pb = uvm_gnio_buf_get(va_space, ch->pb_handle);
+    pb = uvm_gnio_buf_get(va_space, params->pb_handle);
     if (pb == NULL) {
         uvm_va_space_up_read(va_space);
         return NV_ERR_INVALID_STATE;
+    }
+    // pb_size is caller-supplied (the SM-authored method length from CHAN_PREP); bound it to the
+    // buffer so a bad value cannot make the CE walk past the CPR pushbuffer.
+    if (params->pb_size == 0 || params->pb_size > uvm_gnio_buf_size(pb)) {
+        uvm_va_space_up_read(va_space);
+        return NV_ERR_INVALID_ARGUMENT;
     }
     gpu = ch->gpu;
     pb_va = uvm_gnio_buf_gpu_address(pb).address;
@@ -270,14 +273,14 @@ NV_STATUS uvm_gnio_chan_arm(uvm_va_space_t *va_space, UVM_GNIO_CHAN_ARM_PARAMS *
     // Surface the encoded entries + primed GP_PUT so DRY can vet a pushbuffer address before the
     // wedge-prone doorbell (a bad address faults the CE).
     gpu->parent->host_hal->set_gpfifo_pushbuffer_segment_base(&seg, pb_va);
-    gpu->parent->host_hal->set_gpfifo_entry(&ent, pb_va, ch->pb_size, UVM_GPFIFO_SYNC_PROCEED);
+    gpu->parent->host_hal->set_gpfifo_entry(&ent, pb_va, params->pb_size, UVM_GPFIFO_SYNC_PROCEED);
     params->pb_gpu_va = pb_va;
     params->seg_entry = seg;
     params->pb_entry = ent;
     params->put = params->init_put ? params->init_put : num;
 
     if (!params->dry)
-        status = uvm_gnio_channel_arm_ring(gpu, &ch->channel_info, pb_va, ch->pb_size, num, params->init_put);
+        status = uvm_gnio_channel_arm_ring(gpu, &ch->channel_info, pb_va, params->pb_size, num, params->init_put);
 
     uvm_va_space_up_read(va_space);
     return status;

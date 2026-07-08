@@ -75,35 +75,17 @@ long uvm_gnio_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
             UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_ARM_PARAMS,
                 uvm_gnio_chan_arm(va_space, &params));
 
-        case UVM_GNIO_COPY: {
-            UVM_GNIO_COPY_PARAMS params;
-            if (copy_from_user(&params, (void __user *)arg, sizeof(params)))
-                return -EFAULT;
-            params.rmStatus = uvm_gnio_copy(va_space, &params);
-            if (copy_to_user((void __user *)arg, &params, sizeof(params)))
-                return -EFAULT;
-            return 0;
-        }
+        case UVM_GNIO_COPY:
+            UVM_GNIO_DISPATCH(UVM_GNIO_COPY_PARAMS,
+                uvm_gnio_copy(va_space, &params));
 
-        case UVM_GNIO_BENCH_LATENCY: {
-            UVM_GNIO_BENCH_LATENCY_PARAMS params;
-            if (copy_from_user(&params, (void __user *)arg, sizeof(params)))
-                return -EFAULT;
-            params.rmStatus = uvm_gnio_bench_latency(va_space, &params);
-            if (copy_to_user((void __user *)arg, &params, sizeof(params)))
-                return -EFAULT;
-            return 0;
-        }
+        case UVM_GNIO_BENCH_LATENCY:
+            UVM_GNIO_DISPATCH(UVM_GNIO_BENCH_LATENCY_PARAMS,
+                uvm_gnio_bench_latency(va_space, &params));
 
-        case UVM_GNIO_BENCH_BANDWIDTH: {
-            UVM_GNIO_BENCH_BANDWIDTH_PARAMS params;
-            if (copy_from_user(&params, (void __user *)arg, sizeof(params)))
-                return -EFAULT;
-            params.rmStatus = uvm_gnio_bench_bandwidth(va_space, &params);
-            if (copy_to_user((void __user *)arg, &params, sizeof(params)))
-                return -EFAULT;
-            return 0;
-        }
+        case UVM_GNIO_BENCH_BANDWIDTH:
+            UVM_GNIO_DISPATCH(UVM_GNIO_BENCH_BANDWIDTH_PARAMS,
+                uvm_gnio_bench_bandwidth(va_space, &params));
 
         default:
             return -ENOTTY;

@@ -68,16 +68,6 @@ typedef struct {
     void      *plain_scratch; // plaintext fed to cpu_encrypt (decrypt only)
 } gnio_bench_ctx_t;
 
-static size_t gnio_iv_count(size_t size)
-{
-    return (size + PAGE_SIZE - 1) / PAGE_SIZE;
-}
-
-static size_t gnio_tag_bytes(size_t size)
-{
-    return gnio_iv_count(size) * UVM_CONF_COMPUTING_AUTH_TAG_SIZE;
-}
-
 static uvm_gpu_address_t gnio_addr_offset(uvm_gpu_address_t base, NvU64 offset)
 {
     base.address += offset;
@@ -161,12 +151,12 @@ static NV_STATUS gnio_ctx_init(gnio_bench_ctx_t *ctx, uvm_gpu_t *gpu, gnio_op_t 
     }
 
     if (gnio_op_sealed(&op)) {
-        status = uvm_gnio_alloc_sysmem(gpu, (NvU64)nslots * gnio_tag_bytes(size), &ctx->copy_tag);
+        status = uvm_gnio_alloc_sysmem(gpu, (NvU64)nslots * uvm_gnio_seal_tag_bytes(size), &ctx->copy_tag);
         if (status != NV_OK)
             goto err;
     }
     if (op.emit == GNIO_EMIT_ENCRYPT) {
-        ctx->iv_scratch = uvm_kvmalloc(gnio_iv_count(size) * sizeof(*ctx->iv_scratch));
+        ctx->iv_scratch = uvm_kvmalloc(uvm_gnio_iv_count(size) * sizeof(*ctx->iv_scratch));
         if (ctx->iv_scratch == NULL) {
             status = NV_ERR_NO_MEMORY;
             goto err;
@@ -242,7 +232,7 @@ static NvU32 gnio_push_copies(gnio_bench_ctx_t *ctx, uvm_push_t *push, NvU32 cou
                               NvU32 nslots, uvm_gpu_address_t dst_base, uvm_gpu_address_t src_base,
                               void *cipher_base, size_t size)
 {
-    size_t tagb = gnio_tag_bytes(size);
+    size_t tagb = uvm_gnio_seal_tag_bytes(size);
     NvU32 k;
 
     for (k = 0; k < count && uvm_push_has_space(push, GNIO_PUSH_COPY_RESERVE); k++) {
@@ -324,8 +314,6 @@ NV_STATUS uvm_gnio_bench_latency(uvm_va_space_t *va_space, UVM_GNIO_BENCH_LATENC
     NvU32 total_iters = params->warmup + params->iters;
     NvU32 i;
     NV_STATUS status;
-
-    params->dispatch_ns_out = -1;
 
     if (dst == NULL || src == NULL || size == 0 || params->iters == 0)
         return NV_ERR_INVALID_ARGUMENT;

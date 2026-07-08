@@ -20,7 +20,8 @@
     buffer a self-describing blob with no separate sysmem scratch. Sealed HtoD
     reuses UVM's CPU-encrypt + CE-decrypt ingress util. DtoD is a plaintext
     CPR->CPR CE copy (PROT2PROT). Plaintext DtoH/HtoD cross the CPR boundary in the
-    clear and are only valid when confidential computing is disabled.
+    clear and are only valid when confidential computing is disabled -- or, under CC,
+    when the caller sets UVM_GNIO_COPY_F_FORCE_PLAIN to run the firewall probe.
 
 *******************************************************************************/
 
@@ -113,6 +114,7 @@ NV_STATUS uvm_gnio_copy(uvm_va_space_t *va_space, UVM_GNIO_COPY_PARAMS *params)
     uvm_gnio_buf_t *dst = uvm_gnio_buf_get(va_space, params->dst_handle);
     uvm_gnio_buf_t *src = uvm_gnio_buf_get(va_space, params->src_handle);
     size_t size = params->size;
+    bool force_plain = (params->kind_flags & UVM_GNIO_COPY_F_FORCE_PLAIN) != 0;
     uvm_gpu_t *gpu;
     NV_STATUS status;
 
@@ -133,20 +135,16 @@ NV_STATUS uvm_gnio_copy(uvm_va_space_t *va_space, UVM_GNIO_COPY_PARAMS *params)
         case UVM_GNIO_COPY_DTOD:
             status = gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_GPU_INTERNAL);
             break;
+        // Plain cross-CPR CE copies. Under CC these are rejected unless kind_flags requests the
+        // firewall probe (F_FORCE_PLAIN), which forces the copy so the HW REGION_VIOLATION can be
+        // observed; without CC they are the ordinary DtoH/HtoD path.
         case UVM_GNIO_COPY_DTOH:
-            status = g_uvm_global.conf_computing_enabled ? NV_ERR_NOT_SUPPORTED
+            status = (g_uvm_global.conf_computing_enabled && !force_plain) ? NV_ERR_NOT_SUPPORTED
                    : gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_GPU_TO_CPU);
             break;
         case UVM_GNIO_COPY_HTOD:
-            status = g_uvm_global.conf_computing_enabled ? NV_ERR_NOT_SUPPORTED
+            status = (g_uvm_global.conf_computing_enabled && !force_plain) ? NV_ERR_NOT_SUPPORTED
                    : gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_CPU_TO_GPU);
-            break;
-        // force plain CE memcopy across boundary under CC -> should fault
-        case UVM_GNIO_COPY_DTOH_PLAIN:
-            status = gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_GPU_TO_CPU);
-            break;
-        case UVM_GNIO_COPY_HTOD_PLAIN:
-            status = gnio_copy_memcopy(gpu, src, dst, size, UVM_CHANNEL_TYPE_CPU_TO_GPU);
             break;
         default:
             status = NV_ERR_INVALID_ARGUMENT;

@@ -165,6 +165,11 @@ struct uvm_mem_struct
     // time for sysmem allocations.
     uvm_gpu_t *dma_owner;
 
+    // GNIO extension: set for vidmem allocated by the gnio hot-channel path, which needs its CPR
+    // pages mapped into a user (CUDA) VA space so the SM can author the pushbuffer. Gates the
+    // user-space vidmem mapping allowance in vidmem_can_be_mapped without opening it for all vidmem.
+    bool is_gnio;
+
     union
     {
         struct

@@ -29,7 +29,7 @@
 #define UVM_GNIO_COPY             (UVM_GNIO_BASE + 3)
 #define UVM_GNIO_BENCH_LATENCY    (UVM_GNIO_BASE + 4)
 #define UVM_GNIO_BENCH_BANDWIDTH  (UVM_GNIO_BASE + 5)
-#define UVM_GNIO_CALIBRATE_PTIMER (UVM_GNIO_BASE + 6)
+// (UVM_GNIO_BASE + 6) retired -- was UVM_GNIO_CALIBRATE_PTIMER, never implemented
 #define UVM_GNIO_MAP_USER         (UVM_GNIO_BASE + 7)
 #define UVM_GNIO_UNMAP_USER       (UVM_GNIO_BASE + 8)
 #define UVM_GNIO_CHAN_CREATE      (UVM_GNIO_BASE + 9)
@@ -47,11 +47,11 @@
 #define UVM_GNIO_COPY_DTOD        2
 #define UVM_GNIO_COPY_DTOH_SEALED 3
 #define UVM_GNIO_COPY_HTOD_SEALED 4
-// probes that will fail / should produce a fault under CC
-#define UVM_GNIO_COPY_DTOH_PLAIN  5
-#define UVM_GNIO_COPY_HTOD_PLAIN  6
 
-#define UVM_GNIO_F_MEASURE_DISPATCH (1u << 0)
+// Firewall probe: set in UVM_GNIO_COPY_PARAMS.kind_flags to force a plain (unauthenticated) CE
+// copy across the CPR boundary on a DTOH/HTOD kind even under CC, to observe the REGION_VIOLATION
+// fault. Without it, plain DTOH/HTOD are rejected (NV_ERR_NOT_SUPPORTED) when CC is enabled.
+#define UVM_GNIO_COPY_F_FORCE_PLAIN (1u << 0)
 
 typedef struct
 {
@@ -88,17 +88,13 @@ typedef struct
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_UNMAP_USER_PARAMS;
 
-// C0: allocate a dedicated CE GPFIFO channel (GPFIFO + GP_PUT in vidmem/CPR). Returns the
-// channel VAs of the GPFIFO ring and GP_PUT (which the SM will write) + whether the doorbell
-// (workSubmissionOffset MMIO) is present.
+// C0: allocate a dedicated CE GPFIFO channel (GPFIFO + GP_PUT in vidmem/CPR). The GPFIFO/GP_PUT
+// VAs the SM needs are returned by CHAN_PREP; here we only surface the channel handle and whether
+// the doorbell (workSubmissionOffset MMIO) is present (a CC-relevant observation).
 typedef struct
 {
     UVM_GNIO_U32 handle_out;
     UVM_GNIO_U32 rmStatus;
-    UVM_GNIO_U32 num_gpfifo_entries;
-    UVM_GNIO_U32 hw_channel_id;
-    UVM_GNIO_U64 gpfifo_gpu_va;
-    UVM_GNIO_U64 gpput_gpu_va;
     UVM_GNIO_U32 doorbell_present;
     UVM_GNIO_U32 pad;
 } UVM_GNIO_CHAN_CREATE_PARAMS;
@@ -131,14 +127,11 @@ typedef struct
     unsigned char methods[128];
 } UVM_GNIO_CHAN_PREP_PARAMS;
 
-// CHAN_ARM fills the whole GPFIFO ring with [segment_base(pb), pb x(num_entries-1)], sets GP_PUT to
-// init_put, and rings the doorbell once (dry=1 returns the encoded entries without touching the GPU).
-// The channel then walks the ring, blocking at each slot's acquire; because the pushbuffer self-advances
-// GP_PUT and self-rings the doorbell, it keeps running past init_put. init_put is headroom over the
-// per-lap segment-base slot (which does not advance GP_PUT): larger init_put => more laps before drain.
 typedef struct
 {
     UVM_GNIO_U32 chan_handle;
+    UVM_GNIO_U32 pb_handle;
+    UVM_GNIO_U32 pb_size;
     UVM_GNIO_U32 num_entries;
     UVM_GNIO_U32 init_put;
     UVM_GNIO_U32 dry;
@@ -155,6 +148,7 @@ typedef struct
     UVM_GNIO_U32 src_handle;
     UVM_GNIO_U64 size;
     UVM_GNIO_U32 kind;
+    UVM_GNIO_U32 kind_flags;   // UVM_GNIO_COPY_F_* (firewall probe)
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_COPY_PARAMS;
 
@@ -213,10 +207,8 @@ typedef struct
     UVM_GNIO_U64 size;
     UVM_GNIO_U32 iters;
     UVM_GNIO_U32 warmup;
-    UVM_GNIO_U32 flags;
     UVM_GNIO_U64 total_ns_user;
     UVM_GNIO_U64 ce_ns_user;
-    UVM_GNIO_S64 dispatch_ns_out;
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_BENCH_LATENCY_PARAMS;
 
@@ -228,7 +220,6 @@ typedef struct
     UVM_GNIO_U64 size;
     UVM_GNIO_U32 batch;
     UVM_GNIO_U32 warmup_copies;
-    UVM_GNIO_U32 flags;
     UVM_GNIO_U64 bytes_out;
     UVM_GNIO_U64 window_ns_out;
     UVM_GNIO_U32 rmStatus;

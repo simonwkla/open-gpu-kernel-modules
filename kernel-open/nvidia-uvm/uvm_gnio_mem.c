@@ -26,11 +26,17 @@
 #include <linux/scatterlist.h>
 #include <linux/iosys-map.h>
 
+// Process-global ceiling shared across ALL va_spaces (single-tenant research probe). Handles are
+// (slot_index | gen << 16): gen bumps every time a slot is freed so a stale handle to a recycled
+// slot is rejected instead of silently aliasing the new buffer.
 #define UVM_GNIO_MAX_BUFS 256
+#define UVM_GNIO_HANDLE_INDEX(h) ((h) & 0xFFFFu)
+#define UVM_GNIO_HANDLE_GEN(h)   ((h) >> 16)
 
 struct uvm_gnio_buf_struct
 {
     bool in_use;
+    NvU32 gen;
     uvm_va_space_t *owner;
     uvm_gpu_t *gpu;
     NvU32 kind;
@@ -54,10 +60,12 @@ static uvm_gnio_buf_t *gnio_buf_reserve_slot(uvm_va_space_t *va_space, NvU32 *ha
     mutex_lock(&g_gnio_bufs_lock);
     for (i = 0; i < UVM_GNIO_MAX_BUFS; i++) {
         if (!g_gnio_bufs[i].in_use) {
+            NvU32 gen = g_gnio_bufs[i].gen;   // survives the zeroing below
             memset(&g_gnio_bufs[i], 0, sizeof(g_gnio_bufs[i]));
+            g_gnio_bufs[i].gen = gen;
             g_gnio_bufs[i].in_use = true;
             g_gnio_bufs[i].owner = va_space;
-            *handle_out = i;
+            *handle_out = i | ((gen & 0xFFFFu) << 16);
             mutex_unlock(&g_gnio_bufs_lock);
             return &g_gnio_bufs[i];
         }
@@ -70,16 +78,21 @@ static void gnio_buf_release_slot(uvm_gnio_buf_t *buf)
 {
     mutex_lock(&g_gnio_bufs_lock);
     buf->in_use = false;
+    buf->gen++;   // invalidate any outstanding handle to this slot
     mutex_unlock(&g_gnio_bufs_lock);
 }
 
 uvm_gnio_buf_t *uvm_gnio_buf_get(uvm_va_space_t *va_space, NvU32 handle)
 {
-    if (handle >= UVM_GNIO_MAX_BUFS)
+    NvU32 index = UVM_GNIO_HANDLE_INDEX(handle);
+
+    if (index >= UVM_GNIO_MAX_BUFS)
         return NULL;
-    if (!g_gnio_bufs[handle].in_use || g_gnio_bufs[handle].owner != va_space)
+    if (!g_gnio_bufs[index].in_use || g_gnio_bufs[index].owner != va_space)
         return NULL;
-    return &g_gnio_bufs[handle];
+    if ((g_gnio_bufs[index].gen & 0xFFFFu) != UVM_GNIO_HANDLE_GEN(handle))
+        return NULL;
+    return &g_gnio_bufs[index];
 }
 
 uvm_gpu_t *uvm_gnio_buf_gpu(uvm_gnio_buf_t *buf)
@@ -129,6 +142,9 @@ NV_STATUS uvm_gnio_alloc_vidmem(uvm_gpu_t *gpu, NvU64 size, uvm_mem_t **mem_out)
     status = uvm_mem_alloc_vidmem(size, gpu, &mem);
     if (status != NV_OK)
         return status;
+
+    // Permit user-space (CUDA) GPU mapping of these CPR pages; see vidmem_can_be_mapped.
+    mem->is_gnio = true;
 
     status = uvm_mem_map_gpu_kernel(mem, gpu);
     if (status != NV_OK) {
