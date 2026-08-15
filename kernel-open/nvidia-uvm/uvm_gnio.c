@@ -12,13 +12,11 @@
         included in all copies or substantial portions of the Software.
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-
 *******************************************************************************/
 
 #include "uvm_gnio.h"
-#include "uvm_global.h"
+#include "uvm_kvmalloc.h"
 #include "uvm_va_space.h"
-#include "uvm_linux.h"
 
 #define UVM_GNIO_DISPATCH(params_type, handler)                              \
     do {                                                                     \
@@ -39,53 +37,49 @@ long uvm_gnio_ioctl(struct file *filp, unsigned cmd, unsigned long arg)
         return -EINVAL;
 
     switch (cmd) {
-        case UVM_GNIO_ALLOC:
-            UVM_GNIO_DISPATCH(UVM_GNIO_ALLOC_PARAMS,
-                uvm_gnio_mem_alloc(va_space, params.size, params.kind, &params.handle_out));
+        case UVM_GNIO_ALLOC_PROTECTED:
+            UVM_GNIO_DISPATCH(UVM_GNIO_ALLOC_PROTECTED_PARAMS,
+                uvm_gnio_mem_alloc_protected(va_space, params.size, &params.handle_out));
 
         case UVM_GNIO_FREE:
             UVM_GNIO_DISPATCH(UVM_GNIO_FREE_PARAMS,
                 uvm_gnio_mem_free(va_space, params.handle));
 
-        case UVM_GNIO_IMPORT_DMABUF:
-            UVM_GNIO_DISPATCH(UVM_GNIO_IMPORT_DMABUF_PARAMS,
-                uvm_gnio_mem_import_dmabuf(va_space, (int)params.dmabuf_fd, params.size, &params.handle_out));
+        case UVM_GNIO_IMPORT_EXPOSURE:
+            UVM_GNIO_DISPATCH(UVM_GNIO_IMPORT_EXPOSURE_PARAMS,
+                params.reserved == 0 ?
+                    uvm_gnio_mem_import_exposure(va_space,
+                                                 params.dmabuf_fd,
+                                                 params.size,
+                                                 &params.handle_out) :
+                    NV_ERR_INVALID_ARGUMENT);
 
-        case UVM_GNIO_MAP_USER:
-            UVM_GNIO_DISPATCH(UVM_GNIO_MAP_USER_PARAMS,
-                uvm_gnio_mem_map_user(va_space, params.handle, params.user_va));
+        case UVM_GNIO_MAP_PROTECTED:
+            UVM_GNIO_DISPATCH(UVM_GNIO_MAP_PROTECTED_PARAMS,
+                uvm_gnio_mem_map_protected(va_space, params.handle, params.user_va));
 
-        case UVM_GNIO_UNMAP_USER:
-            UVM_GNIO_DISPATCH(UVM_GNIO_UNMAP_USER_PARAMS,
-                uvm_gnio_mem_unmap_user(va_space, params.handle));
+        case UVM_GNIO_UNMAP_PROTECTED:
+            UVM_GNIO_DISPATCH(UVM_GNIO_UNMAP_PROTECTED_PARAMS,
+                uvm_gnio_mem_unmap_protected(va_space, params.handle));
 
-        case UVM_GNIO_CHAN_CREATE:
-            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_CREATE_PARAMS,
-                uvm_gnio_chan_create(va_space, &params));
+        case UVM_GNIO_SUBMIT: {
+            UVM_GNIO_SUBMIT_PARAMS *params = uvm_kvmalloc(sizeof(*params));
+            long result = 0;
 
-        case UVM_GNIO_CHAN_DESTROY:
-            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_DESTROY_PARAMS,
-                uvm_gnio_chan_destroy(va_space, params.handle));
+            if (params == NULL)
+                return -ENOMEM;
+            if (copy_from_user(params, (void __user *)arg, sizeof(*params))) {
+                uvm_kvfree(params);
+                return -EFAULT;
+            }
 
-        case UVM_GNIO_CHAN_PREP:
-            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_PREP_PARAMS,
-                uvm_gnio_chan_prep(va_space, &params));
+            params->rmStatus = uvm_gnio_submit(va_space, params);
+            if (copy_to_user((void __user *)arg, params, sizeof(*params)))
+                result = -EFAULT;
 
-        case UVM_GNIO_CHAN_ARM:
-            UVM_GNIO_DISPATCH(UVM_GNIO_CHAN_ARM_PARAMS,
-                uvm_gnio_chan_arm(va_space, &params));
-
-        case UVM_GNIO_COPY:
-            UVM_GNIO_DISPATCH(UVM_GNIO_COPY_PARAMS,
-                uvm_gnio_copy(va_space, &params));
-
-        case UVM_GNIO_BENCH_LATENCY:
-            UVM_GNIO_DISPATCH(UVM_GNIO_BENCH_LATENCY_PARAMS,
-                uvm_gnio_bench_latency(va_space, &params));
-
-        case UVM_GNIO_BENCH_BANDWIDTH:
-            UVM_GNIO_DISPATCH(UVM_GNIO_BENCH_BANDWIDTH_PARAMS,
-                uvm_gnio_bench_bandwidth(va_space, &params));
+            uvm_kvfree(params);
+            return result;
+        }
 
         default:
             return -ENOTTY;

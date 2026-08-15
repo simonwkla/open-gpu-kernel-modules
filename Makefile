@@ -22,8 +22,17 @@ nv_modeset_kernel_o_binary = kernel-open/nvidia-modeset/nv-modeset-kernel.o_bina
 
 include utils.mk
 
-.PHONY: all
+.PHONY: all compile_commands.json
 all: modules
+
+compile_commands.json:
+	python3 ../linux/scripts/clang-tools/gen_compile_commands.py \
+		-d $(CURDIR)/kernel-open \
+		-o $@ \
+		$(CURDIR)/kernel-open/nvidia-uvm
+	@if [ -n "$(KERNEL_SOURCE)" ]; then \
+		sed -i 's|$(KERNEL_SOURCE)|$(KERNEL_HEADERS)|g' $@; \
+	fi
 
 ###########################################################################
 # nv-kernel.o is the OS agnostic portion of nvidia.ko

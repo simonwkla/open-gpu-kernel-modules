@@ -490,10 +490,6 @@ static unsigned uvm_channel_pool_index_in_channel_manager(const uvm_channel_pool
 // Create a channel manager for the GPU
 NV_STATUS uvm_channel_manager_create(uvm_gpu_t *gpu, uvm_channel_manager_t **manager_out);
 
-// GNIO: fill an externally RM-allocated channel's whole GPFIFO ring with the self-sufficient hot
-// pushbuffer + set GP_PUT=init_put + ring the doorbell (via SEC2 into its CPR control surfaces).
-NV_STATUS uvm_gnio_channel_arm_ring(uvm_gpu_t *gpu, UvmGpuChannelInfo *ci, NvU64 pb_gpu_va,
-                                    NvU32 pb_size, NvU32 num_entries, NvU32 init_put);
 
 static bool uvm_pool_type_is_valid(uvm_channel_pool_type_t pool_type)
 {

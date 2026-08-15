@@ -1354,61 +1354,6 @@ static void set_gpfifo_via_sec2(uvm_push_t *sec2_push, uvm_channel_t *channel, N
                                    gpfifo_auth_tag_gpu.address);
 }
 
-// GNIO: fill the whole GPFIFO ring with [segment_base(pb), pb x(num_entries-1)], set GP_PUT=init_put
-// (or num_entries if 0), and ring the doorbell once. The self-sufficient pushbuffer then advances its
-// own GP_PUT and rings its own doorbell each fire, so the channel keeps running with no further SEC2.
-// Modeled on set_gpfifo_via_sec2 + update_gpput_via_sec2 but off a raw UvmGpuChannelInfo. GPFIFO entries
-// hold only VA[39:0]; the leading segment-base control entry supplies VA[63:40]. num_entries even
-// (16B-aligned SEC2 write), <= ring depth.
-NV_STATUS uvm_gnio_channel_arm_ring(uvm_gpu_t *gpu, UvmGpuChannelInfo *ci, NvU64 pb_gpu_va,
-                                    NvU32 pb_size, NvU32 num_entries, NvU32 init_put)
-{
-    uvm_push_t sec2_push;
-    NvU64 ring[64];
-    NvU32 gpput_scratchpad[UVM_CONF_COMPUTING_SEC2_BUF_ALIGNMENT / sizeof(NvU32)];
-    void *ring_enc_cpu, *ring_auth_tag_cpu, *gpput_enc_cpu, *gpput_auth_tag_cpu;
-    uvm_gpu_address_t ring_enc_gpu, ring_auth_tag_gpu, gpput_enc_gpu, gpput_auth_tag_gpu;
-    NvU32 i, ring_bytes = num_entries * sizeof(NvU64);
-    NvU32 put = init_put ? init_put : num_entries;
-    NV_STATUS status;
-
-    if (num_entries < 2 || (num_entries & 1) || num_entries > 62)
-        return NV_ERR_INVALID_ARGUMENT;
-
-    status = uvm_push_begin(gpu->channel_manager, UVM_CHANNEL_TYPE_SEC2, &sec2_push, "gnio ring launch");
-    if (status != NV_OK)
-        return status;
-
-    gpu->parent->host_hal->set_gpfifo_pushbuffer_segment_base(&ring[0], pb_gpu_va);
-    for (i = 1; i < num_entries; i++)
-        gpu->parent->host_hal->set_gpfifo_entry(&ring[i], pb_gpu_va, pb_size, UVM_GPFIFO_SYNC_PROCEED);
-
-    ring_enc_cpu = uvm_push_get_single_inline_buffer(&sec2_push, ring_bytes,
-                                                     UVM_CONF_COMPUTING_SEC2_BUF_ALIGNMENT, &ring_enc_gpu);
-    ring_auth_tag_cpu = push_reserve_auth_tag(&sec2_push, &ring_auth_tag_gpu);
-    uvm_conf_computing_cpu_encrypt(sec2_push.channel, ring_enc_cpu, ring, NULL, ring_bytes, ring_auth_tag_cpu);
-    gpu->parent->sec2_hal->decrypt(&sec2_push, ci->gpFifoGpuVa, ring_enc_gpu.address, ring_bytes,
-                                   ring_auth_tag_gpu.address);
-
-    memset(gpput_scratchpad, 0, sizeof(gpput_scratchpad));
-    gpput_scratchpad[(ci->gpPutGpuVa % UVM_CONF_COMPUTING_AUTH_TAG_ALIGNMENT) / sizeof(NvU32)] = put;
-    gpput_scratchpad[(ci->gpGetGpuVa % UVM_CONF_COMPUTING_AUTH_TAG_ALIGNMENT) / sizeof(NvU32)] = put;
-    gpput_enc_cpu = uvm_push_get_single_inline_buffer(&sec2_push, UVM_CONF_COMPUTING_SEC2_BUF_ALIGNMENT,
-                                                      UVM_CONF_COMPUTING_SEC2_BUF_ALIGNMENT, &gpput_enc_gpu);
-    gpput_auth_tag_cpu = push_reserve_auth_tag(&sec2_push, &gpput_auth_tag_gpu);
-    uvm_conf_computing_cpu_encrypt(sec2_push.channel, gpput_enc_cpu, gpput_scratchpad, NULL,
-                                   sizeof(gpput_scratchpad), gpput_auth_tag_cpu);
-    gpu->parent->sec2_hal->decrypt(&sec2_push,
-                                   UVM_ALIGN_DOWN(ci->gpPutGpuVa, UVM_CONF_COMPUTING_SEC2_BUF_ALIGNMENT),
-                                   gpput_enc_gpu.address, sizeof(gpput_scratchpad), gpput_auth_tag_gpu.address);
-
-    status = uvm_push_end_and_wait(&sec2_push);
-    if (status != NV_OK)
-        return status;
-
-    UVM_GPU_WRITE_ONCE(*ci->workSubmissionOffset, ci->workSubmissionToken);
-    return NV_OK;
-}
 
 static NV_STATUS internal_channel_submit_work_indirect_sec2(uvm_push_t *push, NvU32 old_cpu_put, NvU32 new_gpu_put)
 {

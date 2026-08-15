@@ -12,7 +12,6 @@
         included in all copies or substantial portions of the Software.
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-
 *******************************************************************************/
 
 #ifndef __UVM_GNIO_H__
@@ -27,6 +26,12 @@
 struct uvm_gnio_buf_struct;
 typedef struct uvm_gnio_buf_struct uvm_gnio_buf_t;
 
+typedef enum
+{
+    UVM_GNIO_BUF_PROTECTED,
+    UVM_GNIO_BUF_EXPOSURE,
+} uvm_gnio_buf_kind_t;
+
 static inline bool uvm_gnio_is_gnio_cmd(unsigned cmd)
 {
     return cmd >= UVM_GNIO_BASE && cmd < UVM_GNIO_LAST;
@@ -34,56 +39,23 @@ static inline bool uvm_gnio_is_gnio_cmd(unsigned cmd)
 
 long uvm_gnio_ioctl(struct file *filp, unsigned cmd, unsigned long arg);
 
-NV_STATUS uvm_gnio_mem_alloc(uvm_va_space_t *va_space,
-                             NvU64 size,
-                             NvU32 kind,
-                             NvU32 *handle_out);
-
-NV_STATUS uvm_gnio_mem_import_dmabuf(uvm_va_space_t *va_space,
-                                     int dmabuf_fd,
-                                     NvU64 size,
-                                     NvU32 *handle_out);
-
+NV_STATUS uvm_gnio_mem_alloc_protected(uvm_va_space_t *va_space, NvU64 size, NvU32 *handle_out);
+NV_STATUS uvm_gnio_mem_import_exposure(uvm_va_space_t *va_space,
+                                       int dmabuf_fd,
+                                       NvU64 size,
+                                       NvU32 *handle_out);
 NV_STATUS uvm_gnio_mem_free(uvm_va_space_t *va_space, NvU32 handle);
-
-NV_STATUS uvm_gnio_mem_map_user(uvm_va_space_t *va_space, NvU32 handle, NvU64 user_va);
-
-NV_STATUS uvm_gnio_mem_unmap_user(uvm_va_space_t *va_space, NvU32 handle);
-
-NV_STATUS uvm_gnio_chan_create(uvm_va_space_t *va_space, UVM_GNIO_CHAN_CREATE_PARAMS *params);
-
-NV_STATUS uvm_gnio_chan_destroy(uvm_va_space_t *va_space, NvU32 handle);
-
-NV_STATUS uvm_gnio_chan_prep(uvm_va_space_t *va_space, UVM_GNIO_CHAN_PREP_PARAMS *params);
-
-NV_STATUS uvm_gnio_chan_arm(uvm_va_space_t *va_space, UVM_GNIO_CHAN_ARM_PARAMS *params);
-
-void uvm_gnio_chan_destroy_all(uvm_va_space_t *va_space);
-
+NV_STATUS uvm_gnio_mem_map_protected(uvm_va_space_t *va_space, NvU32 handle, NvU64 user_va);
+NV_STATUS uvm_gnio_mem_unmap_protected(uvm_va_space_t *va_space, NvU32 handle);
 void uvm_gnio_mem_free_all(uvm_va_space_t *va_space);
 
-NV_STATUS uvm_gnio_alloc_vidmem(uvm_gpu_t *gpu, NvU64 size, uvm_mem_t **mem_out);
-
-NV_STATUS uvm_gnio_alloc_sysmem(uvm_gpu_t *gpu, NvU64 size, uvm_mem_t **mem_out);
-
-void uvm_gnio_free_mem(uvm_mem_t *mem);
-
 uvm_gnio_buf_t *uvm_gnio_buf_get(uvm_va_space_t *va_space, NvU32 handle);
-
 uvm_gpu_t *uvm_gnio_buf_gpu(uvm_gnio_buf_t *buf);
-
 NvU64 uvm_gnio_buf_size(uvm_gnio_buf_t *buf);
-
+NvU32 uvm_gnio_buf_kind(uvm_gnio_buf_t *buf);
 uvm_gpu_address_t uvm_gnio_buf_gpu_address(uvm_gnio_buf_t *buf);
-
 void *uvm_gnio_buf_cpu_addr(uvm_gnio_buf_t *buf);
 
-NV_STATUS uvm_gnio_copy(uvm_va_space_t *va_space, UVM_GNIO_COPY_PARAMS *params);
-
-NV_STATUS uvm_gnio_bench_latency(uvm_va_space_t *va_space,
-                                 UVM_GNIO_BENCH_LATENCY_PARAMS *params);
-
-NV_STATUS uvm_gnio_bench_bandwidth(uvm_va_space_t *va_space,
-                                   UVM_GNIO_BENCH_BANDWIDTH_PARAMS *params);
+NV_STATUS uvm_gnio_submit(uvm_va_space_t *va_space, UVM_GNIO_SUBMIT_PARAMS *params);
 
 #endif // __UVM_GNIO_H__

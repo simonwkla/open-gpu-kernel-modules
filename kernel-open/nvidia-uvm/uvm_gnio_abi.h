@@ -12,7 +12,6 @@
         included in all copies or substantial portions of the Software.
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-
 *******************************************************************************/
 
 #ifndef __UVM_GNIO_ABI_H__
@@ -20,46 +19,42 @@
 
 #define UVM_GNIO_U64 unsigned long long
 #define UVM_GNIO_U32 unsigned int
-#define UVM_GNIO_S64 long long
+#define UVM_GNIO_S32 int
 
 #define UVM_GNIO_BASE              2048
-#define UVM_GNIO_ALLOC            (UVM_GNIO_BASE + 0)
+#define UVM_GNIO_ALLOC_PROTECTED  (UVM_GNIO_BASE + 0)
 #define UVM_GNIO_FREE             (UVM_GNIO_BASE + 1)
-#define UVM_GNIO_IMPORT_DMABUF    (UVM_GNIO_BASE + 2)
-#define UVM_GNIO_COPY             (UVM_GNIO_BASE + 3)
-#define UVM_GNIO_BENCH_LATENCY    (UVM_GNIO_BASE + 4)
-#define UVM_GNIO_BENCH_BANDWIDTH  (UVM_GNIO_BASE + 5)
-// (UVM_GNIO_BASE + 6) retired -- was UVM_GNIO_CALIBRATE_PTIMER, never implemented
-#define UVM_GNIO_MAP_USER         (UVM_GNIO_BASE + 7)
-#define UVM_GNIO_UNMAP_USER       (UVM_GNIO_BASE + 8)
-#define UVM_GNIO_CHAN_CREATE      (UVM_GNIO_BASE + 9)
-#define UVM_GNIO_CHAN_DESTROY     (UVM_GNIO_BASE + 10)
-#define UVM_GNIO_CHAN_PREP        (UVM_GNIO_BASE + 11)
-#define UVM_GNIO_CHAN_ARM         (UVM_GNIO_BASE + 12)
-#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 13)
+#define UVM_GNIO_IMPORT_EXPOSURE  (UVM_GNIO_BASE + 2)
+#define UVM_GNIO_MAP_PROTECTED    (UVM_GNIO_BASE + 3)
+#define UVM_GNIO_UNMAP_PROTECTED  (UVM_GNIO_BASE + 4)
+#define UVM_GNIO_SUBMIT           (UVM_GNIO_BASE + 5)
+#define UVM_GNIO_LAST             (UVM_GNIO_BASE + 6)
 
-#define UVM_GNIO_KIND_CPR_VIDMEM      0
-#define UVM_GNIO_KIND_UNPROT_SYSMEM   1
-#define UVM_GNIO_KIND_IMPORTED_DMABUF 2
+#define UVM_GNIO_SUBMIT_ABI_VERSION 5u
+#define UVM_GNIO_MAX_OPS          1024u
+#define UVM_GNIO_MAX_TIMESTAMPS      8u
 
-#define UVM_GNIO_COPY_HTOD        0
-#define UVM_GNIO_COPY_DTOH        1
-#define UVM_GNIO_COPY_DTOD        2
-#define UVM_GNIO_COPY_DTOH_SEALED 3
-#define UVM_GNIO_COPY_HTOD_SEALED 4
+#define UVM_GNIO_OP_SEMAPHORE_ACQUIRE 1u
+#define UVM_GNIO_OP_SEMAPHORE_RELEASE 2u
+#define UVM_GNIO_OP_SEAL              3u
+#define UVM_GNIO_OP_UNSEAL            4u
+#define UVM_GNIO_OP_COPY              5u
+#define UVM_GNIO_OP_TIMESTAMP         6u
+#define UVM_GNIO_OP_ENCRYPT           7u
+#define UVM_GNIO_OP_DECRYPT           8u
 
-// Firewall probe: set in UVM_GNIO_COPY_PARAMS.kind_flags to force a plain (unauthenticated) CE
-// copy across the CPR boundary on a DTOH/HTOD kind even under CC, to observe the REGION_VIOLATION
-// fault. Without it, plain DTOH/HTOD are rejected (NV_ERR_NOT_SUPPORTED) when CC is enabled.
-#define UVM_GNIO_COPY_F_FORCE_PLAIN (1u << 0)
+#define UVM_GNIO_AUTH_TAG_SIZE 16u
+#define UVM_GNIO_IV_SIZE       13u
+#define UVM_GNIO_PAGE_SIZE     4096u
+#define UVM_GNIO_SEAL_ALIGN    16u
+#define UVM_GNIO_RECORD_ALIGN  32u
 
 typedef struct
 {
     UVM_GNIO_U64 size;
-    UVM_GNIO_U32 kind;
     UVM_GNIO_U32 handle_out;
     UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_ALLOC_PARAMS;
+} UVM_GNIO_ALLOC_PROTECTED_PARAMS;
 
 typedef struct
 {
@@ -67,162 +62,84 @@ typedef struct
     UVM_GNIO_U32 rmStatus;
 } UVM_GNIO_FREE_PARAMS;
 
+// The exposure DMA-BUF must be CPU coherent and map as one contiguous DMA
+// segment. Its caller owns synchronization with all non-GNIO users.
 typedef struct
 {
-    UVM_GNIO_S64 dmabuf_fd;
+    UVM_GNIO_S32 dmabuf_fd;
+    UVM_GNIO_U32 rmStatus;
     UVM_GNIO_U64 size;
     UVM_GNIO_U32 handle_out;
-    UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_IMPORT_DMABUF_PARAMS;
+    UVM_GNIO_U32 reserved;
+} UVM_GNIO_IMPORT_EXPOSURE_PARAMS;
 
 typedef struct
 {
     UVM_GNIO_U32 handle;
     UVM_GNIO_U32 rmStatus;
     UVM_GNIO_U64 user_va;
-} UVM_GNIO_MAP_USER_PARAMS;
+} UVM_GNIO_MAP_PROTECTED_PARAMS;
 
 typedef struct
 {
     UVM_GNIO_U32 handle;
     UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_UNMAP_USER_PARAMS;
+} UVM_GNIO_UNMAP_PROTECTED_PARAMS;
 
-// C0: allocate a dedicated CE GPFIFO channel (GPFIFO + GP_PUT in vidmem/CPR). The GPFIFO/GP_PUT
-// VAs the SM needs are returned by CHAN_PREP; here we only surface the channel handle and whether
-// the doorbell (workSubmissionOffset MMIO) is present (a CC-relevant observation).
+// One typed element in a managed UVM push. Fields not used by an operation are zero.
 typedef struct
 {
-    UVM_GNIO_U32 handle_out;
-    UVM_GNIO_U32 rmStatus;
-    UVM_GNIO_U32 doorbell_present;
-    UVM_GNIO_U32 pad;
-} UVM_GNIO_CHAN_CREATE_PARAMS;
-
-typedef struct
-{
-    UVM_GNIO_U32 handle;
-    UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_CHAN_DESTROY_PARAMS;
-
-// CHAN_PREP authors the self-sufficient hot-channel pushbuffer (the driver renders the method bytes;
-// the SM writes them into the CPR `pb` buffer). Per fire it is:
-//   [ acquire(go>=1), release(go<-0), reduction_inc(done), reduction_inc(own GP_PUT), ring own doorbell ]
-// It waits for the SM to fire (a store to `go`), re-arms `go` so the next ring slot waits again, ticks
-// `done` for the SM to track completions, then advances its own GP_PUT and rings its own doorbell -- so
-// the channel keeps itself running with zero CPU per fire. (A real CE copy method goes between the
-// acquire and the reset.) `go` and `done` are two slots in one CPR `sems` buffer at the returned offsets.
-typedef struct
-{
-    UVM_GNIO_U32  chan_handle;
-    UVM_GNIO_U32  pb_handle;
-    UVM_GNIO_U32  sems_handle;
-    UVM_GNIO_U32  rmStatus;
-    UVM_GNIO_U32  method_size;
-    UVM_GNIO_U32  go_off;
-    UVM_GNIO_U32  done_off;
-    UVM_GNIO_U32  pad;
-    UVM_GNIO_U64  pb_gpu_va;
-    UVM_GNIO_U64  sems_gpu_va;
-    unsigned char methods[128];
-} UVM_GNIO_CHAN_PREP_PARAMS;
-
-typedef struct
-{
-    UVM_GNIO_U32 chan_handle;
-    UVM_GNIO_U32 pb_handle;
-    UVM_GNIO_U32 pb_size;
-    UVM_GNIO_U32 num_entries;
-    UVM_GNIO_U32 init_put;
-    UVM_GNIO_U32 dry;
-    UVM_GNIO_U32 rmStatus;
-    UVM_GNIO_U64 pb_gpu_va;
-    UVM_GNIO_U64 seg_entry;
-    UVM_GNIO_U64 pb_entry;
-    UVM_GNIO_U32 put;
-} UVM_GNIO_CHAN_ARM_PARAMS;
-
-typedef struct
-{
-    UVM_GNIO_U32 dst_handle;
-    UVM_GNIO_U32 src_handle;
+    UVM_GNIO_U32 type;
+    UVM_GNIO_U32 source_handle;
+    UVM_GNIO_U32 destination_handle;
+    UVM_GNIO_U64 source_offset;
+    UVM_GNIO_U64 destination_offset;
     UVM_GNIO_U64 size;
-    UVM_GNIO_U32 kind;
-    UVM_GNIO_U32 kind_flags;   // UVM_GNIO_COPY_F_* (firewall probe)
-    UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_COPY_PARAMS;
+    UVM_GNIO_U32 value;
+} UVM_GNIO_PUSH_OP;
 
-// Sealed DtoH lays out the destination dmabuf as a self-describing blob:
-//   [ ciphertext (size) | pad | auth tag | pad | per-page IV log ]
-// The CE writes the ciphertext and tag (physical+SYS), the CPU logs the IVs into
-// the same buffer. Shared by the kernel (which writes at these offsets) and the
-// userspace allocator (which must size the dmabuf to match). The kernel asserts
-// these constants against the live UVM types (BUILD_BUG_ON).
-#define UVM_GNIO_PAGE_SIZE     4096u
-#define UVM_GNIO_AUTH_TAG_SIZE 16u   // == UVM_CONF_COMPUTING_AUTH_TAG_SIZE
-#define UVM_GNIO_IV_SIZE       13u   // == sizeof(UvmCslIv): u8 iv[12] + u8 fresh
-#define UVM_GNIO_SEAL_ALIGN    16u
-
-static inline UVM_GNIO_U64 uvm_gnio_align_up(UVM_GNIO_U64 v, UVM_GNIO_U64 a)
+// Synchronously processes the typed list. GPU operations are emitted into one
+// managed UVM push; CPU ENCRYPT/DECRYPT operations run before/after that push.
+typedef struct
 {
-    return (v + (a - 1)) & ~(UVM_GNIO_U64)(a - 1);
+    UVM_GNIO_U32 abi_version;
+    UVM_GNIO_U32 op_count;
+    UVM_GNIO_U32 confidential;
+    UVM_GNIO_U32 rmStatus;
+    UVM_GNIO_PUSH_OP ops[UVM_GNIO_MAX_OPS];
+    UVM_GNIO_U64 total_ns;
+    UVM_GNIO_U64 submit_ns;
+    UVM_GNIO_U64 preprocess_ns;
+    UVM_GNIO_U64 postprocess_ns;
+} UVM_GNIO_SUBMIT_PARAMS;
+
+static inline UVM_GNIO_U64 uvm_gnio_align_up(UVM_GNIO_U64 value, UVM_GNIO_U64 alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
 }
 
-static inline UVM_GNIO_U64 uvm_gnio_iv_count(UVM_GNIO_U64 size)
+static inline UVM_GNIO_U64 uvm_gnio_record_count(UVM_GNIO_U64 size)
 {
     return (size + UVM_GNIO_PAGE_SIZE - 1) / UVM_GNIO_PAGE_SIZE;
 }
 
-static inline UVM_GNIO_U64 uvm_gnio_seal_tag_bytes(UVM_GNIO_U64 size)
-{
-    return uvm_gnio_iv_count(size) * UVM_GNIO_AUTH_TAG_SIZE;
-}
-
-static inline UVM_GNIO_U64 uvm_gnio_seal_iv_bytes(UVM_GNIO_U64 size)
-{
-    return uvm_gnio_iv_count(size) * UVM_GNIO_IV_SIZE;
-}
-
-static inline UVM_GNIO_U64 uvm_gnio_seal_tag_off(UVM_GNIO_U64 size)
+static inline UVM_GNIO_U64 uvm_gnio_record_tag_off(UVM_GNIO_U64 size)
 {
     return uvm_gnio_align_up(size, UVM_GNIO_SEAL_ALIGN);
 }
 
-static inline UVM_GNIO_U64 uvm_gnio_seal_iv_off(UVM_GNIO_U64 size)
+static inline UVM_GNIO_U64 uvm_gnio_record_iv_off(UVM_GNIO_U64 size)
 {
-    return uvm_gnio_align_up(uvm_gnio_seal_tag_off(size) + uvm_gnio_seal_tag_bytes(size),
+    return uvm_gnio_align_up(uvm_gnio_record_tag_off(size) +
+                             uvm_gnio_record_count(size) * UVM_GNIO_AUTH_TAG_SIZE,
                              UVM_GNIO_SEAL_ALIGN);
 }
 
-static inline UVM_GNIO_U64 uvm_gnio_sealed_dtoh_buf_bytes(UVM_GNIO_U64 size)
+static inline UVM_GNIO_U64 uvm_gnio_record_bytes(UVM_GNIO_U64 size)
 {
-    return uvm_gnio_seal_iv_off(size) + uvm_gnio_seal_iv_bytes(size);
+    return uvm_gnio_align_up(uvm_gnio_record_iv_off(size) +
+                             uvm_gnio_record_count(size) * UVM_GNIO_IV_SIZE,
+                             UVM_GNIO_RECORD_ALIGN);
 }
-
-typedef struct
-{
-    UVM_GNIO_U32 src_handle;
-    UVM_GNIO_U32 dst_handle;
-    UVM_GNIO_U32 kind;
-    UVM_GNIO_U64 size;
-    UVM_GNIO_U32 iters;
-    UVM_GNIO_U32 warmup;
-    UVM_GNIO_U64 total_ns_user;
-    UVM_GNIO_U64 ce_ns_user;
-    UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_BENCH_LATENCY_PARAMS;
-
-typedef struct
-{
-    UVM_GNIO_U32 src_handle;
-    UVM_GNIO_U32 dst_handle;
-    UVM_GNIO_U32 kind;
-    UVM_GNIO_U64 size;
-    UVM_GNIO_U32 batch;
-    UVM_GNIO_U32 warmup_copies;
-    UVM_GNIO_U64 bytes_out;
-    UVM_GNIO_U64 window_ns_out;
-    UVM_GNIO_U32 rmStatus;
-} UVM_GNIO_BENCH_BANDWIDTH_PARAMS;
 
 #endif // __UVM_GNIO_ABI_H__

@@ -39,6 +39,7 @@
 #include "uvm_va_space_mm.h"
 #include "uvm_test.h"
 #include "uvm_common.h"
+#include "uvm_gnio.h"
 #include "nv_uvm_interface.h"
 #include "nv-kthread-q.h"
 #include <linux/mmzone.h>
@@ -492,6 +493,10 @@ void uvm_va_space_destroy(uvm_va_space_t *va_space)
     // tear down. Once we're done, the bottom half will fail to find any
     // registered GPUs in the VA space, so those faults will be canceled.
     uvm_va_space_down_write(va_space);
+
+    // GNIO resources depend on the registered GPU and GPU VA space. Destroy
+    // them under the same PM and VA-space locks before unregistering either.
+    uvm_gnio_mem_free_all(va_space);
 
     uvm_processor_mask_copy(retained_gpus, &va_space->registered_gpus);
 
@@ -1006,7 +1011,7 @@ NV_STATUS uvm_va_space_unregister_gpu(uvm_va_space_t *va_space, const NvProcesso
         return NV_ERR_INVALID_DEVICE;
     }
 
-    // We have to drop the VA space lock below mid-unregister. We have to
+    // We have to drop the VA space lock below mid-unregister.
     // prevent any other threads from coming in during that window and allowing
     // new channels to enter the GPU. That means we must disallow:
     // - GPU VA space register

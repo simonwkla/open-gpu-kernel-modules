@@ -5,3 +5,4 @@
 _out/
 compile_commands.json
 /.cache/
+.DS_Store
