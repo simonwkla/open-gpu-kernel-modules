@@ -1354,7 +1354,6 @@ static void set_gpfifo_via_sec2(uvm_push_t *sec2_push, uvm_channel_t *channel, N
                                    gpfifo_auth_tag_gpu.address);
 }
 
-
 static NV_STATUS internal_channel_submit_work_indirect_sec2(uvm_push_t *push, NvU32 old_cpu_put, NvU32 new_gpu_put)
 {
     uvm_pushbuffer_t *pushbuffer = uvm_channel_get_pushbuffer(push->channel);

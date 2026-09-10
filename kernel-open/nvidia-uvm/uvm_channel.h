@@ -490,7 +490,6 @@ static unsigned uvm_channel_pool_index_in_channel_manager(const uvm_channel_pool
 // Create a channel manager for the GPU
 NV_STATUS uvm_channel_manager_create(uvm_gpu_t *gpu, uvm_channel_manager_t **manager_out);
 
-
 static bool uvm_pool_type_is_valid(uvm_channel_pool_type_t pool_type)
 {
     return (is_power_of_2(pool_type) && (pool_type < UVM_CHANNEL_POOL_TYPE_MASK));
